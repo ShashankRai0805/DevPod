@@ -108,7 +108,7 @@ export default function ReplPage() {
     if (workspaceReady && status === 'ready' && typeof replId === 'string') {
       const domain = process.env.NEXT_PUBLIC_REPL_BASE_DOMAIN || 'codecohort.xyz'
       // Use http in local dev, in production you'd use wss/https
-      const runnerUrl = `http://${replId}.${domain}`
+      const runnerUrl = `http://runner-${replId}.${domain}`
       
       const newSocket = io(runnerUrl, {
         transports: ['websocket', 'polling']
@@ -126,6 +126,8 @@ export default function ReplPage() {
     }
   }, [workspaceReady, status, replId])
 
+  const [previewKey, setPreviewKey] = useState(0)
+
   const retry = () => {
     if (typeof replId === 'string') {
       void startAndPoll(replId)
@@ -133,6 +135,7 @@ export default function ReplPage() {
   }
 
   const showWorkspace = workspaceReady && status === 'ready' && !error
+  const previewUrl = `http://${replId}.${process.env.NEXT_PUBLIC_REPL_BASE_DOMAIN || 'codecohort.xyz'}`
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
@@ -153,11 +156,22 @@ export default function ReplPage() {
             {/* Right Panel: Output & Terminal */}
             <div className="flex w-[40%] flex-col min-w-0 bg-[#1e1e1e]">
               <div className="flex-1 min-h-0 border-b border-[#333] bg-white flex flex-col">
-                <div className="bg-[#252526] text-slate-300 text-xs px-3 py-2 font-medium border-b border-[#333]">Output</div>
+                <div className="bg-[#252526] flex items-center justify-between px-3 py-1.5 border-b border-[#333]">
+                  <div className="text-xs font-medium text-slate-400">Output</div>
+                  <div className="flex items-center gap-3">
+                    <a href={previewUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 text-[10px] font-semibold" title="Open in new tab">
+                      Open App ↗
+                    </a>
+                    <button onClick={() => setPreviewKey(k => k + 1)} className="text-slate-400 hover:text-white" title="Refresh Output">
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" clipRule="evenodd" d="M8 2.5a5.5 5.5 0 105.5 5.5h1.5A7 7 0 118 1v1.5z"/></svg>
+                    </button>
+                  </div>
+                </div>
                 {showWorkspace ? (
                   <iframe 
+                    key={previewKey}
                     className="w-full h-full border-none bg-white" 
-                    src={`http://${replId}.${process.env.NEXT_PUBLIC_REPL_BASE_DOMAIN || 'codecohort.xyz'}`} 
+                    src={previewUrl} 
                     title="Output" 
                   />
                 ) : (

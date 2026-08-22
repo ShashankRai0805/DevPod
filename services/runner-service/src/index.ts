@@ -22,8 +22,8 @@ const io = new Server(server, {
 
 initWebSocket(io);
 
-// Force port to 3000 to match Kubernetes configuration
-const port = 3000;
+// Force port to 4000 to avoid conflicting with user web apps
+const port = 4000;
 server.listen(port, () => {
   console.log(`Runner service listening on port ${port}`);
 });

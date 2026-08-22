@@ -247,7 +247,12 @@ async function upsertDeployment(
 
               ports: [
                 {
+                  name: 'app',
                   containerPort: 3000,
+                },
+                {
+                  name: 'runner',
+                  containerPort: 4000,
                 },
               ],
 
@@ -261,7 +266,7 @@ async function upsertDeployment(
               readinessProbe: {
                 httpGet: {
                   path: '/health',
-                  port: 3000,
+                  port: 4000,
                 },
 
                 initialDelaySeconds: 5,
@@ -353,9 +358,14 @@ async function upsertService(
 
       ports: [
         {
-          name: 'http',
+          name: 'app',
           port: 3000,
           targetPort: 3000,
+        },
+        {
+          name: 'runner',
+          port: 4000,
+          targetPort: 4000,
         },
       ],
     },
@@ -430,19 +440,34 @@ async function upsertIngress(
 
       rules: [
         {
-          host,
-
+          host: `runner-${host}`,
           http: {
             paths: [
               {
                 path: '/',
-
                 pathType: 'Prefix',
-
                 backend: {
                   service: {
                     name: names.service,
-
+                    port: {
+                      number: 4000,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+        {
+          host,
+          http: {
+            paths: [
+              {
+                path: '/',
+                pathType: 'Prefix',
+                backend: {
+                  service: {
+                    name: names.service,
                     port: {
                       number: 3000,
                     },
