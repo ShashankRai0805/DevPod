@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 import { io, Socket } from 'socket.io-client'
-import { Terminal } from 'xterm'
-import { FitAddon } from 'xterm-addon-fit'
+import type { Terminal } from 'xterm'
 import 'xterm/css/xterm.css'
 
 type Status = 'provisioning' | 'starting' | 'ready' | 'failed'
@@ -459,43 +458,57 @@ function TerminalPanel({ socket }: { socket: Socket | null }) {
   useEffect(() => {
     if (!terminalRef.current || !socket) return
 
-    const term = new Terminal({
-      theme: { background: '#020617', foreground: '#e2e8f0' },
-      fontFamily: 'monospace',
-      fontSize: 14,
-    })
-    const fitAddon = new FitAddon()
-    term.loadAddon(fitAddon)
+    let term: Terminal;
+    let onTerminalOutput: (data: string) => void;
+    let handleResize: () => void;
 
-    term.open(terminalRef.current)
-    fitAddon.fit()
-    xtermRef.current = term
+    (async () => {
+      const { Terminal } = await import('xterm');
+      const { FitAddon } = await import('xterm-addon-fit');
 
-    socket.emit('requestTerminal')
+      term = new Terminal({
+        theme: { background: '#000000', foreground: '#e2e8f0' },
+        fontFamily: 'monospace',
+        fontSize: 14,
+      })
+      const fitAddon = new FitAddon()
+      term.loadAddon(fitAddon)
 
-    term.onData(data => {
-      socket.emit('terminalData', data)
-    })
+      if (!terminalRef.current) {
+        term.dispose();
+        return;
+      }
 
-    const onTerminalOutput = (data: string) => {
-      term.write(data)
-    }
-
-    socket.on('terminal output', onTerminalOutput)
-
-    const handleResize = () => {
+      term.open(terminalRef.current)
       fitAddon.fit()
-      socket.emit('resizeTerminal', { cols: term.cols, rows: term.rows })
-    }
+      xtermRef.current = term
 
-    window.addEventListener('resize', handleResize)
-    // Delay initial resize slightly to allow container to fully render
-    setTimeout(handleResize, 100)
+      socket.emit('requestTerminal')
+
+      term.onData(data => {
+        socket.emit('terminalData', data)
+      })
+
+      onTerminalOutput = (data: string) => {
+        term.write(data)
+      }
+
+      socket.on('terminal output', onTerminalOutput)
+
+      handleResize = () => {
+        fitAddon.fit()
+        socket.emit('resizeTerminal', { cols: term.cols, rows: term.rows })
+      }
+
+      window.addEventListener('resize', handleResize)
+      // Delay initial resize slightly to allow container to fully render
+      setTimeout(handleResize, 100)
+    })();
 
     return () => {
-      socket.off('terminal output', onTerminalOutput)
-      window.removeEventListener('resize', handleResize)
-      term.dispose()
+      if (onTerminalOutput) socket.off('terminal output', onTerminalOutput)
+      if (handleResize) window.removeEventListener('resize', handleResize)
+      if (term) term.dispose()
     }
   }, [socket])
 
