@@ -6,14 +6,17 @@ export class TerminalSession {
   private ptyProcess: pty.IPty;
   
   constructor(onData: (data: string) => void) {
-    const shell = process.env.SHELL || '/bin/sh'; // Changed from bash to sh to be safe with alpine/slim
+    const shell = process.env.SHELL || '/bin/bash';
 
     this.ptyProcess = pty.spawn(shell, [], {
-      name: 'xterm-color',
+      name: 'xterm-256color',
       cols: 80,
       rows: 24,
       cwd: WORKSPACE_DIR,
-      env: process.env as any
+      env: {
+        ...process.env,
+        PS1: '\\e[1;32mrunner\\e[m:\\e[1;34m\\w\\e[m$ '
+      } as any
     });
 
     this.ptyProcess.onData((data) => {
