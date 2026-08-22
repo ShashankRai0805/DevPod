@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service_name
+  labels:
+    app: service_name
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service_name
+  template:
+    metadata:
+      labels:
+        app: service_name
+    spec:
+      serviceAccountName: service_name
+      volumes:
+        - name: workspace-volume
+          emptyDir: {}
+      initContainers:
+        - name: copy-s3-resources
+          image: amazon/aws-cli:2.17.50
+          command: ["/bin/sh", "-c"]
+          args:
+            - >
+              aws s3 cp s3://repl/code/service_name/ /workspace/ --recursive &&
+              echo "Resources copied from S3";
+          env:
+            - name: AWS_REGION
+              value: "your_aws_region"
+          volumeMounts:
+            - name: workspace-volume
+              mountPath: /workspace
+      containers:
+        - name: workspace-server
+          image: python:3.12-alpine
+          command: ["python", "-m", "http.server", "3000", "--bind", "0.0.0.0", "--directory", "/workspace"]
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - name: workspace-volume
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+              ephemeral-storage: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service_name
+spec:
+  selector:
+    app: service_name
+  ports:
+    - protocol: TCP
+      name: user
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: service_name
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: service_name.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: service_name
+                port:
+                  number: 3000

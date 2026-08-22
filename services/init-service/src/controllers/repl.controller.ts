@@ -22,7 +22,7 @@ export async function createRepl(req: Request, res: Response) {
     return res.status(201).json({
       success: true,
       message: 'Repl created successfully',
-      repl: { name, language, path: `users/${name}/`, copied: result.copied }
+      repl: { replId: name, name, language, path: `users/${name}/`, copied: result.copied }
     })
   } catch (err: any) {
     console.error('createRepl error', err)

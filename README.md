@@ -1,5 +1,11 @@
-# Replit Clone — Phase 1
+# Replit Clone
 
-Phase 1 implements a minimal frontend and init-service that copies language templates from S3 into a new user project prefix.
+This repository currently contains:
 
-See the `frontend/` and `services/init-service/` folders.
+- `frontend/` — Next.js UI
+- `services/init-service/` — creates a repl and copies template files from S3
+- `services/orchestrator-service/` — creates Kubernetes resources for a repl
+- `templates/` — local template sources that can be uploaded into S3
+- `infra/ingress-controller/` — reference for the existing NGINX ingress controller
+
+For Phase 2 setup instructions, see [docs/phase-2-eks.md](docs/phase-2-eks.md).
