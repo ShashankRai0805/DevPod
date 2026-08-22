@@ -1,8 +1,19 @@
 import { Server, Socket } from 'socket.io';
-import { fetchDir, fetchContent, updateContent } from './fs';
+import { fetchDir, fetchContent, updateContent, createFile, createFolder } from './fs';
+import chokidar from 'chokidar';
 import { TerminalSession } from './pty';
 
 export function initWebSocket(io: Server) {
+  const watcher = chokidar.watch(process.env.WORKSPACE_DIR || '/workspace', {
+    ignored: /(^|[\/\\])\../, // ignore dotfiles
+    persistent: true,
+    ignoreInitial: true,
+  });
+
+  watcher.on('all', (event, path) => {
+    io.emit('fileChanged');
+  });
+
   io.on('connection', (socket: Socket) => {
     console.log('Client connected:', socket.id);
     let terminalSession: TerminalSession | null = null;
@@ -33,6 +44,24 @@ export function initWebSocket(io: Server) {
         await updateContent(data.path, data.content);
       } catch (err) {
         console.error('Failed to update content', err);
+      }
+    });
+
+    socket.on('createFile', async (filePath: string, callback: (data: any) => void) => {
+      try {
+        await createFile(filePath);
+        if (callback) callback({ success: true });
+      } catch (err: any) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on('createFolder', async (folderPath: string, callback: (data: any) => void) => {
+      try {
+        await createFolder(folderPath);
+        if (callback) callback({ success: true });
+      } catch (err: any) {
+        if (callback) callback({ success: false, error: err.message });
       }
     });
 

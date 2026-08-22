@@ -20,6 +20,16 @@ type FileNode = {
   children?: FileNode[]
 }
 
+function getFileIcon(filename: string) {
+  if (filename.endsWith('.js') || filename.endsWith('.jsx')) return <span className="text-yellow-400 font-bold text-[10px]">JS</span>;
+  if (filename.endsWith('.json')) return <span className="text-purple-400 font-bold text-[10px]">{'{}'}</span>;
+  if (filename.endsWith('.ts') || filename.endsWith('.tsx')) return <span className="text-blue-400 font-bold text-[10px]">TS</span>;
+  if (filename.endsWith('.py')) return <span className="text-blue-500 font-bold text-[10px]">PY</span>;
+  if (filename.endsWith('.css')) return <span className="text-pink-400 font-bold text-[10px]">#</span>;
+  if (filename.endsWith('.html')) return <span className="text-orange-500 font-bold text-[10px]">&lt;&gt;</span>;
+  return <span className="text-slate-400 text-[10px]">📄</span>;
+}
+
 export default function ReplPage() {
   const router = useRouter()
   const { replId } = router.query
@@ -129,17 +139,34 @@ export default function ReplPage() {
       <div className="flex min-h-screen flex-col">
         <WorkspaceHeader replId={typeof replId === 'string' ? replId : 'Workspace'} status={showWorkspace ? 'ready' : 'provisioning'} />
 
-        <main className="flex min-h-0 flex-1 bg-white">
-          <aside className="hidden w-[250px] shrink-0 border-r border-slate-200 bg-slate-50 md:flex md:flex-col">
+        <main className="flex min-h-0 flex-1 bg-[#1e1e1e] text-slate-300">
+          <aside className="hidden w-[250px] shrink-0 border-r border-[#333] bg-[#252526] md:flex md:flex-col">
             {showWorkspace ? <FileExplorer socket={socket} onSelectFile={setSelectedFile} /> : <SkeletonSidebar />}
           </aside>
 
-          <section className="flex min-w-0 flex-1 flex-col bg-white">
-            <div className="min-h-0 flex-1 border-b border-slate-200">
+          <section className="flex min-w-0 flex-1 flex-row bg-[#1e1e1e]">
+            {/* Editor Panel (Middle) */}
+            <div className="flex-1 min-w-0 border-r border-[#333] flex flex-col">
               {showWorkspace ? <EditorPanel socket={socket} selectedFile={selectedFile} /> : <WorkspaceSkeleton />}
             </div>
-            <div className="h-[230px] shrink-0 bg-slate-950">
-              {showWorkspace ? <TerminalPanel socket={socket} /> : <TerminalSkeleton />}
+            
+            {/* Right Panel: Output & Terminal */}
+            <div className="flex w-[40%] flex-col min-w-0 bg-[#1e1e1e]">
+              <div className="flex-1 min-h-0 border-b border-[#333] bg-white flex flex-col">
+                <div className="bg-[#252526] text-slate-300 text-xs px-3 py-2 font-medium border-b border-[#333]">Output</div>
+                {showWorkspace ? (
+                  <iframe 
+                    className="w-full h-full border-none bg-white" 
+                    src={`http://${replId}.${process.env.NEXT_PUBLIC_REPL_BASE_DOMAIN || 'codecohort.xyz'}`} 
+                    title="Output" 
+                  />
+                ) : (
+                  <div className="flex-1 bg-white" />
+                )}
+              </div>
+              <div className="h-[50%] shrink-0 bg-black">
+                {showWorkspace ? <TerminalPanel socket={socket} /> : <TerminalSkeleton />}
+              </div>
             </div>
           </section>
         </main>
@@ -192,66 +219,177 @@ function StatusBadge({ status }: { status: Status }) {
 }
 
 function FileExplorer({ socket, onSelectFile }: { socket: Socket | null, onSelectFile: (path: string) => void }) {
-  const [nodes, setNodes] = useState<FileNode[]>([])
+  const [nodesByPath, setNodesByPath] = useState<Record<string, FileNode[]>>({})
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['']))
+  const [isCreating, setIsCreating] = useState<'file' | 'folder' | null>(null)
+  const [createName, setCreateName] = useState('')
+  const [selectedFolder, setSelectedFolder] = useState<string>('')
 
-  useEffect(() => {
-    if (!socket) return
-    socket.emit('fetchDir', '', (res: any) => {
-      if (res && res.success) setNodes(res.data)
+  const fetchFolder = (path: string) => {
+    if (!socket) return;
+    socket.emit('fetchDir', path, (res: any) => {
+      if (res && res.success) {
+        setNodesByPath(prev => ({ ...prev, [path]: res.data }))
+      }
     })
+  }
+
+  // Initial load
+  useEffect(() => {
+    fetchFolder('')
   }, [socket])
+
+  // File watcher refresh
+  useEffect(() => {
+    if (!socket) return;
+    const handler = () => {
+      expandedFolders.forEach(folder => fetchFolder(folder))
+    }
+    socket.on('fileChanged', handler)
+    return () => { socket.off('fileChanged', handler) }
+  }, [socket, expandedFolders])
+
+  const toggleFolder = (path: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev)
+      if (next.has(path)) {
+        next.delete(path)
+      } else {
+        next.add(path)
+        fetchFolder(path)
+      }
+      return next
+    })
+  }
+
+  const handleCreateSubmit = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && createName.trim() && socket) {
+      const targetPath = selectedFolder ? `${selectedFolder}/${createName.trim()}` : createName.trim()
+      const eventName = isCreating === 'file' ? 'createFile' : 'createFolder'
+      socket.emit(eventName, targetPath, (res: any) => {
+        if (!res?.success) console.error(res?.error)
+      })
+      setIsCreating(null)
+      setCreateName('')
+    } else if (e.key === 'Escape') {
+      setIsCreating(null)
+      setCreateName('')
+    }
+  }
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-        Explorer
+      <div className="flex items-center justify-between border-b border-[#333] px-4 py-3">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+          Explorer
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setIsCreating('file')} title="New File" className="text-slate-400 hover:text-white">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M9 1H3a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.414a1 1 0 00-.293-.707l-4-4A1 1 0 009 1zm0 1.414L12.586 6H9V2.414zM4 14V3h4v4h4v7H4z"/></svg>
+          </button>
+          <button onClick={() => setIsCreating('folder')} title="New Folder" className="text-slate-400 hover:text-white">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M1 4a2 2 0 012-2h4l1.5 2H13a2 2 0 012 2v6a2 2 0 01-2 2H3a2 2 0 01-2-2V4zm2 0v8h10V6H7.83L6.33 4H3z"/></svg>
+          </button>
+        </div>
       </div>
-      <div className="flex-1 overflow-auto px-3 py-3 text-sm text-slate-700">
-        <Tree nodes={nodes} socket={socket} parentPath="" onSelectFile={onSelectFile} />
+
+      <div className="flex-1 overflow-auto px-2 py-3 text-sm text-slate-300" onClick={() => setSelectedFolder('')}>
+        {isCreating && (
+          <div className="mb-2 px-2">
+            <input 
+              autoFocus
+              className="w-full rounded border border-[#444] bg-[#1e1e1e] text-white px-2 py-1 text-[13px] outline-none focus:border-blue-500"
+              placeholder={isCreating === 'file' ? 'File name...' : 'Folder name...'}
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+              onKeyDown={handleCreateSubmit}
+              onBlur={() => { setIsCreating(null); setCreateName(''); }}
+            />
+            {selectedFolder && <div className="text-[10px] text-slate-500 mt-1">in {selectedFolder}</div>}
+          </div>
+        )}
+        <Tree 
+          nodes={nodesByPath[''] || []} 
+          nodesByPath={nodesByPath}
+          expandedFolders={expandedFolders}
+          toggleFolder={toggleFolder}
+          parentPath="" 
+          onSelectFile={onSelectFile} 
+          selectedFolder={selectedFolder}
+          setSelectedFolder={setSelectedFolder}
+        />
       </div>
     </div>
   )
 }
 
-function Tree({ nodes, socket, parentPath, depth = 0, onSelectFile }: { nodes: FileNode[], socket: Socket | null, parentPath: string, depth?: number, onSelectFile: (path: string) => void }) {
+type TreeProps = { nodes: FileNode[], nodesByPath: Record<string, FileNode[]>, expandedFolders: Set<string>, toggleFolder: (p: string) => void, parentPath: string, depth?: number, onSelectFile: (path: string) => void, selectedFolder: string, setSelectedFolder: (p: string) => void }
+
+function Tree({ nodes, nodesByPath, expandedFolders, toggleFolder, parentPath, depth = 0, onSelectFile, selectedFolder, setSelectedFolder }: TreeProps) {
+  if (!nodes || nodes.length === 0) return null;
   return (
-    <ul className="space-y-1">
+    <ul className="space-y-0.5">
       {nodes.map(node => (
-        <TreeNode key={node.name} node={node} socket={socket} parentPath={parentPath} depth={depth} onSelectFile={onSelectFile} />
+        <TreeNode 
+          key={node.name} 
+          node={node} 
+          nodesByPath={nodesByPath}
+          expandedFolders={expandedFolders}
+          toggleFolder={toggleFolder}
+          parentPath={parentPath} 
+          depth={depth} 
+          onSelectFile={onSelectFile}
+          selectedFolder={selectedFolder}
+          setSelectedFolder={setSelectedFolder}
+        />
       ))}
     </ul>
   )
 }
 
-function TreeNode({ node, socket, parentPath, depth, onSelectFile }: { node: FileNode, socket: Socket | null, parentPath: string, depth: number, onSelectFile: (path: string) => void }) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [children, setChildren] = useState<FileNode[]>([])
-  
+function TreeNode({ node, nodesByPath, expandedFolders, toggleFolder, parentPath, depth, onSelectFile, selectedFolder, setSelectedFolder }: TreeProps & { node: FileNode, depth: number }) {
   const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name
+  const isOpen = expandedFolders.has(currentPath)
+  const isSelected = selectedFolder === currentPath
+  const children = nodesByPath[currentPath] || []
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation() // prevent FileExplorer background click
     if (node.type === 'folder') {
-      if (!isOpen && socket) {
-        socket.emit('fetchDir', currentPath, (res: any) => {
-          if (res && res.success) setChildren(res.data)
-        })
-      }
-      setIsOpen(!isOpen)
+      setSelectedFolder(currentPath)
+      toggleFolder(currentPath)
     } else {
+      setSelectedFolder(parentPath)
       onSelectFile(currentPath)
     }
   }
 
   return (
     <li>
-      <div onClick={handleClick} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100">
-        <span className="text-slate-500">{node.type === 'folder' ? (isOpen ? '▾' : '▸') : '•'}</span>
-        <span className={node.type === 'folder' ? 'font-medium text-slate-800' : 'text-slate-700'}>{node.name}</span>
+      <div 
+        onClick={handleClick} 
+        className={`flex cursor-pointer items-center gap-2 rounded-md py-1.5 transition-colors ${isSelected ? 'bg-[#37373d]' : 'hover:bg-[#2a2d2e]'}`}
+        style={{ paddingLeft: `${(depth * 12) + 8}px`, paddingRight: '8px' }}
+      >
+        <span className="flex w-4 items-center justify-center text-[10px] text-slate-400 shrink-0">
+          {node.type === 'folder' ? (isOpen ? '▼' : '▶') : getFileIcon(node.name)}
+        </span>
+        <span className={`truncate text-[13px] ${node.type === 'folder' ? 'text-slate-200' : 'text-slate-300'}`}>
+          {node.name}
+        </span>
       </div>
-      {isOpen && children.length > 0 && (
-        <div className="pl-4">
-          <Tree nodes={children} socket={socket} parentPath={currentPath} depth={depth + 1} onSelectFile={onSelectFile} />
-        </div>
+      {isOpen && (
+        <Tree 
+          nodes={children} 
+          nodesByPath={nodesByPath}
+          expandedFolders={expandedFolders}
+          toggleFolder={toggleFolder}
+          parentPath={currentPath} 
+          depth={depth + 1} 
+          onSelectFile={onSelectFile} 
+          selectedFolder={selectedFolder}
+          setSelectedFolder={setSelectedFolder}
+        />
       )}
     </li>
   )
@@ -280,17 +418,17 @@ function EditorPanel({ socket, selectedFile }: { socket: Socket | null, selected
   }
 
   if (!selectedFile) {
-    return <div className="flex h-full min-h-0 flex-col items-center justify-center bg-white text-slate-400">Select a file to edit</div>
+    return <div className="flex h-full min-h-0 flex-col items-center justify-center bg-[#1e1e1e] text-slate-500">Select a file to edit</div>
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500">
-        <span className="rounded-md bg-white px-2 py-1 font-medium text-slate-700 shadow-sm">{selectedFile}</span>
+    <div className="flex h-full min-h-0 flex-col bg-[#1e1e1e]">
+      <div className="flex items-center gap-2 border-b border-[#333] bg-[#252526] px-4 py-2 text-xs text-slate-400">
+        <span className="rounded-md bg-[#1e1e1e] px-2 py-1 font-medium text-slate-300 shadow-sm border border-[#333]">{selectedFile}</span>
       </div>
-      <div className="min-h-0 flex-1 bg-white p-4">
+      <div className="min-h-0 flex-1 p-4">
         <textarea 
-          className="h-full w-full resize-none outline-none font-mono text-[13px] leading-6 text-slate-900"
+          className="h-full w-full resize-none outline-none font-mono text-[13px] leading-6 text-slate-300 bg-transparent"
           value={content}
           onChange={handleChange}
           spellCheck={false}

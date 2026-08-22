@@ -65,3 +65,30 @@ export async function updateContent(filePath: string, content: string): Promise<
     throw err;
   }
 }
+
+export async function createFile(filePath: string): Promise<void> {
+  const fullPath = path.join(WORKSPACE_DIR, filePath);
+  try {
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    // create empty file
+    await fs.writeFile(fullPath, '', 'utf-8');
+    uploadToS3(fullPath, filePath);
+  } catch (err) {
+    console.error(`Error creating file ${filePath}:`, err);
+    throw err;
+  }
+}
+
+export async function createFolder(folderPath: string): Promise<void> {
+  const fullPath = path.join(WORKSPACE_DIR, folderPath);
+  try {
+    await fs.mkdir(fullPath, { recursive: true });
+    // S3 doesn't really have folders, but we can create a .keep file to force it to exist
+    const keepFilePath = path.join(fullPath, '.keep');
+    await fs.writeFile(keepFilePath, '', 'utf-8');
+    uploadToS3(keepFilePath, path.join(folderPath, '.keep'));
+  } catch (err) {
+    console.error(`Error creating folder ${folderPath}:`, err);
+    throw err;
+  }
+}
