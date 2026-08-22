@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
+import { io, Socket } from 'socket.io-client'
+import { Terminal } from 'xterm'
+import { FitAddon } from 'xterm-addon-fit'
+import 'xterm/css/xterm.css'
 
 type Status = 'provisioning' | 'starting' | 'ready' | 'failed'
 
@@ -16,45 +20,6 @@ type FileNode = {
   children?: FileNode[]
 }
 
-const fileTree: FileNode[] = [
-  {
-    name: 'src',
-    type: 'folder',
-    children: [
-      { name: 'index.tsx', type: 'file' },
-      { name: 'app.tsx', type: 'file' },
-      { name: 'utils.ts', type: 'file' },
-    ],
-  },
-  {
-    name: 'public',
-    type: 'folder',
-    children: [{ name: 'favicon.ico', type: 'file' }],
-  },
-  { name: 'package.json', type: 'file' },
-  { name: 'README.md', type: 'file' },
-]
-
-const codeLines = [
-  'import React from "react"',
-  '',
-  'export default function App() {',
-  '  const message = "Hello from your repl"',
-  '',
-  '  return (',
-  '    <main className="p-6">',
-  '      <h1>{message}</h1>',
-  '    </main>',
-  '  )',
-  '}',
-]
-
-const terminalLines = [
-  'npm run dev',
-  '> ready',
-  'workspace loaded successfully',
-]
-
 export default function ReplPage() {
   const router = useRouter()
   const { replId } = router.query
@@ -63,6 +28,9 @@ export default function ReplPage() {
   const [workspaceReady, setWorkspaceReady] = useState(false)
   const startedRef = useRef(false)
   const pollRef = useRef<number | null>(null)
+
+  const [socket, setSocket] = useState<Socket | null>(null)
+  const [selectedFile, setSelectedFile] = useState<string | null>(null)
 
   const orchestratorUrl = useMemo(
     () => process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:4100',
@@ -126,6 +94,28 @@ export default function ReplPage() {
     }
   }, [router.isReady, replId])
 
+  useEffect(() => {
+    if (workspaceReady && status === 'ready' && typeof replId === 'string') {
+      const domain = process.env.NEXT_PUBLIC_REPL_BASE_DOMAIN || 'codecohort.xyz'
+      // Use http in local dev, in production you'd use wss/https
+      const runnerUrl = `http://${replId}.${domain}`
+      
+      const newSocket = io(runnerUrl, {
+        transports: ['websocket', 'polling']
+      })
+      
+      newSocket.on('connect', () => {
+        console.log('Connected to runner WebSocket')
+        setSocket(newSocket)
+      })
+      
+      return () => {
+        newSocket.disconnect()
+        setSocket(null)
+      }
+    }
+  }, [workspaceReady, status, replId])
+
   const retry = () => {
     if (typeof replId === 'string') {
       void startAndPoll(replId)
@@ -141,15 +131,15 @@ export default function ReplPage() {
 
         <main className="flex min-h-0 flex-1 bg-white">
           <aside className="hidden w-[250px] shrink-0 border-r border-slate-200 bg-slate-50 md:flex md:flex-col">
-            {showWorkspace ? <FileExplorer /> : <SkeletonSidebar />}
+            {showWorkspace ? <FileExplorer socket={socket} onSelectFile={setSelectedFile} /> : <SkeletonSidebar />}
           </aside>
 
           <section className="flex min-w-0 flex-1 flex-col bg-white">
             <div className="min-h-0 flex-1 border-b border-slate-200">
-              {showWorkspace ? <EditorPanel /> : <WorkspaceSkeleton />}
+              {showWorkspace ? <EditorPanel socket={socket} selectedFile={selectedFile} /> : <WorkspaceSkeleton />}
             </div>
             <div className="h-[230px] shrink-0 bg-slate-950">
-              {showWorkspace ? <TerminalPanel /> : <TerminalSkeleton />}
+              {showWorkspace ? <TerminalPanel socket={socket} /> : <TerminalSkeleton />}
             </div>
           </section>
         </main>
@@ -201,116 +191,168 @@ function StatusBadge({ status }: { status: Status }) {
   return <span className={`rounded-full border px-3 py-1 text-xs font-medium ${tone}`}>{label}</span>
 }
 
-function FileExplorer() {
+function FileExplorer({ socket, onSelectFile }: { socket: Socket | null, onSelectFile: (path: string) => void }) {
+  const [nodes, setNodes] = useState<FileNode[]>([])
+
+  useEffect(() => {
+    if (!socket) return
+    socket.emit('fetchDir', '', (res: any) => {
+      if (res && res.success) setNodes(res.data)
+    })
+  }, [socket])
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
         Explorer
       </div>
       <div className="flex-1 overflow-auto px-3 py-3 text-sm text-slate-700">
-        <Tree nodes={fileTree} />
+        <Tree nodes={nodes} socket={socket} parentPath="" onSelectFile={onSelectFile} />
       </div>
     </div>
   )
 }
 
-function Tree({ nodes, depth = 0 }: { nodes: FileNode[]; depth?: number }) {
+function Tree({ nodes, socket, parentPath, depth = 0, onSelectFile }: { nodes: FileNode[], socket: Socket | null, parentPath: string, depth?: number, onSelectFile: (path: string) => void }) {
   return (
     <ul className="space-y-1">
       {nodes.map(node => (
-        <li key={`${node.name}-${depth}`}>
-          <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100">
-            <span className="text-slate-500">{node.type === 'folder' ? '▸' : '•'}</span>
-            <span className={node.type === 'folder' ? 'font-medium text-slate-800' : 'text-slate-700'}>{node.name}</span>
-          </div>
-          {node.children && <div className="pl-4"><Tree nodes={node.children} depth={depth + 1} /></div>}
-        </li>
+        <TreeNode key={node.name} node={node} socket={socket} parentPath={parentPath} depth={depth} onSelectFile={onSelectFile} />
       ))}
     </ul>
   )
 }
 
-function EditorPanel() {
+function TreeNode({ node, socket, parentPath, depth, onSelectFile }: { node: FileNode, socket: Socket | null, parentPath: string, depth: number, onSelectFile: (path: string) => void }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [children, setChildren] = useState<FileNode[]>([])
+  
+  const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name
+
+  const handleClick = () => {
+    if (node.type === 'folder') {
+      if (!isOpen && socket) {
+        socket.emit('fetchDir', currentPath, (res: any) => {
+          if (res && res.success) setChildren(res.data)
+        })
+      }
+      setIsOpen(!isOpen)
+    } else {
+      onSelectFile(currentPath)
+    }
+  }
+
+  return (
+    <li>
+      <div onClick={handleClick} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100">
+        <span className="text-slate-500">{node.type === 'folder' ? (isOpen ? '▾' : '▸') : '•'}</span>
+        <span className={node.type === 'folder' ? 'font-medium text-slate-800' : 'text-slate-700'}>{node.name}</span>
+      </div>
+      {isOpen && children.length > 0 && (
+        <div className="pl-4">
+          <Tree nodes={children} socket={socket} parentPath={currentPath} depth={depth + 1} onSelectFile={onSelectFile} />
+        </div>
+      )}
+    </li>
+  )
+}
+
+function EditorPanel({ socket, selectedFile }: { socket: Socket | null, selectedFile: string | null }) {
+  const [content, setContent] = useState<string>('')
+  
+  useEffect(() => {
+    if (!socket || !selectedFile) return
+    socket.emit('fetchContent', selectedFile, (res: any) => {
+      if (res && res.success) {
+        setContent(res.content)
+      } else {
+        setContent(`// Failed to load file ${selectedFile}`)
+      }
+    })
+  }, [socket, selectedFile])
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newContent = e.target.value
+    setContent(newContent)
+    if (socket && selectedFile) {
+      socket.emit('updateContent', { path: selectedFile, content: newContent })
+    }
+  }
+
+  if (!selectedFile) {
+    return <div className="flex h-full min-h-0 flex-col items-center justify-center bg-white text-slate-400">Select a file to edit</div>
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500">
-        <span className="rounded-md bg-white px-2 py-1 font-medium text-slate-700 shadow-sm">index.tsx</span>
-        <span>•</span>
-        <span>TypeScript React</span>
+        <span className="rounded-md bg-white px-2 py-1 font-medium text-slate-700 shadow-sm">{selectedFile}</span>
       </div>
-
-      <div className="min-h-0 flex-1 overflow-auto bg-white">
-        <div className="grid min-h-full grid-cols-[48px_1fr] font-mono text-[13px] leading-6">
-          <div className="select-none border-r border-slate-200 bg-slate-50 px-3 py-4 text-right text-slate-400">
-            {codeLines.map((_, index) => (
-              <div key={index}>{index + 1}</div>
-            ))}
-          </div>
-          <pre className="overflow-x-auto px-4 py-4 text-slate-900">
-            {codeLines.map((line, index) => (
-              <CodeLine key={index} line={line} />
-            ))}
-          </pre>
-        </div>
+      <div className="min-h-0 flex-1 bg-white p-4">
+        <textarea 
+          className="h-full w-full resize-none outline-none font-mono text-[13px] leading-6 text-slate-900"
+          value={content}
+          onChange={handleChange}
+          spellCheck={false}
+        />
       </div>
     </div>
   )
 }
 
-function CodeLine({ line }: { line: string }) {
-  if (line.startsWith('import React')) {
-    return <div><span className="text-blue-700">import</span> <span className="text-slate-900">React</span> <span className="text-slate-500">from</span> <span className="text-emerald-700">"react"</span></div>
-  }
+function TerminalPanel({ socket }: { socket: Socket | null }) {
+  const terminalRef = useRef<HTMLDivElement>(null)
+  const xtermRef = useRef<Terminal | null>(null)
 
-  if (line.startsWith('export default function')) {
-    return <div><span className="text-blue-700">export default function</span> <span className="text-slate-900">App</span> <span className="text-slate-900">()</span> <span className="text-slate-900">{`{`}</span></div>
-  }
+  useEffect(() => {
+    if (!terminalRef.current || !socket) return
 
-  if (line.includes('message =')) {
-    return <div className="pl-4"><span className="text-blue-700">const</span> <span className="text-slate-900">message</span> <span className="text-slate-500">=</span> <span className="text-emerald-700">"Hello from your repl"</span></div>
-  }
+    const term = new Terminal({
+      theme: { background: '#020617', foreground: '#e2e8f0' },
+      fontFamily: 'monospace',
+      fontSize: 14,
+    })
+    const fitAddon = new FitAddon()
+    term.loadAddon(fitAddon)
 
-  if (line === '  return (') {
-    return <div className="pl-4"><span className="text-blue-700">return</span> <span className="text-slate-900">(</span></div>
-  }
+    term.open(terminalRef.current)
+    fitAddon.fit()
+    xtermRef.current = term
 
-  if (line.includes('<main')) {
-    return <div className="pl-8 text-slate-700">&lt;<span className="text-blue-700">main</span> <span className="text-slate-500">className</span>=<span className="text-emerald-700">"p-6"</span>&gt;</div>
-  }
+    socket.emit('requestTerminal')
 
-  if (line.includes('<h1>')) {
-    return <div className="pl-10 text-slate-700">&lt;<span className="text-blue-700">h1</span>&gt;{'{'}message{'}'}&lt;/<span className="text-blue-700">h1</span>&gt;</div>
-  }
+    term.onData(data => {
+      socket.emit('terminalData', data)
+    })
 
-  if (line.includes('</main>')) {
-    return <div className="pl-8 text-slate-700">&lt;/<span className="text-blue-700">main</span>&gt;</div>
-  }
+    const onTerminalOutput = (data: string) => {
+      term.write(data)
+    }
 
-  if (line === '  )') {
-    return <div className="pl-4 text-slate-900">)</div>
-  }
+    socket.on('terminal output', onTerminalOutput)
 
-  if (line === '}') {
-    return <div className="text-slate-900">{`}`}</div>
-  }
+    const handleResize = () => {
+      fitAddon.fit()
+      socket.emit('resizeTerminal', { cols: term.cols, rows: term.rows })
+    }
 
-  return <div>{line || '\u00A0'}</div>
-}
+    window.addEventListener('resize', handleResize)
+    // Delay initial resize slightly to allow container to fully render
+    setTimeout(handleResize, 100)
 
-function TerminalPanel() {
+    return () => {
+      socket.off('terminal output', onTerminalOutput)
+      window.removeEventListener('resize', handleResize)
+      term.dispose()
+    }
+  }, [socket])
+
   return (
     <div className="flex h-full flex-col border-t border-slate-800 bg-slate-950 text-slate-100">
       <div className="border-b border-slate-800 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
         Terminal
       </div>
-      <div className="flex-1 overflow-auto px-4 py-3 font-mono text-sm leading-6 text-slate-200">
-        {terminalLines.map((line, index) => (
-          <div key={index}>
-            <span className="text-slate-500">$ </span>
-            {line}
-          </div>
-        ))}
-      </div>
+      <div className="flex-1 overflow-hidden p-2" ref={terminalRef}></div>
     </div>
   )
 }

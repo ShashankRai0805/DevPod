@@ -11,9 +11,8 @@ import { ReplJobState } from '../types'
 
 const states = new Map<string, ReplJobState>()
 
-// Temporary image for Phase 2.
-// This will later be replaced by your Runner image.
-const deploymentImage = 'python:3.12-alpine'
+// Runner image from .env or fallback
+const deploymentImage = process.env.RUNNER_IMAGE || 'shashank0805/runner-service:latest'
 
 const initImage = 'amazon/aws-cli:2.17.50'
 
@@ -227,30 +226,23 @@ async function upsertDeployment(
           ],
 
           /*
-           * TEMPORARY CONTAINER
+           * RUNNER CONTAINER
            *
-           * This is NOT the final Runner.
-           *
-           * For now it simply serves /workspace
-           * so that we can verify:
-           *
-           * S3 → Pod → Service → Ingress
+           * Handles WebSocket connections for Terminal (node-pty),
+           * filesystem operations, and async S3 synchronization.
            */
           containers: [
             {
               name: 'workspace-server',
 
               image: deploymentImage,
+              imagePullPolicy: 'Always',
 
-              command: [
-                'python',
-                '-m',
-                'http.server',
-                '3000',
-                '--bind',
-                '0.0.0.0',
-                '--directory',
-                '/workspace',
+              env: [
+                {
+                  name: 'REPL_ID',
+                  value: replId,
+                },
               ],
 
               ports: [
@@ -268,7 +260,7 @@ async function upsertDeployment(
 
               readinessProbe: {
                 httpGet: {
-                  path: '/',
+                  path: '/health',
                   port: 3000,
                 },
 
