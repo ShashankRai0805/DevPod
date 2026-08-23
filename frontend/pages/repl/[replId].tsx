@@ -109,9 +109,7 @@ export default function ReplPage() {
       // Use http in local dev, in production you'd use wss/https
       const runnerUrl = `https://runner-${replId}.${domain}`
       
-      const newSocket = io(runnerUrl, {
-        transports: ['websocket', 'polling']
-      })
+      const newSocket = io(runnerUrl)
       
       newSocket.on('connect', () => {
         console.log('Connected to runner WebSocket')
