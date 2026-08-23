@@ -11,5 +11,6 @@ app.use(cors({ origin: FRONTEND_URL }))
 app.use('/api/repls', replRoutes)
 
 app.get('/', (req, res) => res.json({ ok: true }))
+app.get('/health', (req, res) => res.json({ status: 'ok' }))
 
 export default app

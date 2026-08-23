@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: init-service
+  namespace: replit-system
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: init-service
+
+  template:
+    metadata:
+      labels:
+        app: init-service
+
+    spec:
+      serviceAccountName: init-service
+
+      containers:
+        - name: init-service
+          image: 699073937176.dkr.ecr.us-east-1.amazonaws.com/init-service:v2
+
+          ports:
+            - containerPort: 4000
+
+          env:
+            - name: AWS_REGION
+              value: "us-east-1"
+
+            - name: S3_BUCKET_NAME
+              value: "shashank-replit-projects"
+
+            - name: PORT
+              value: "4000"
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 20

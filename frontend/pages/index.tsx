@@ -22,7 +22,7 @@ export default function CreateRepl() {
     if (!language) return setError('Language is required')
     setLoading(true)
     try {
-      const initServiceUrl = process.env.NEXT_PUBLIC_INIT_SERVICE_URL || 'http://localhost:4000'
+      const initServiceUrl = process.env.NEXT_PUBLIC_INIT_SERVICE_URL
       const res = await fetch(`${initServiceUrl}/api/repls`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

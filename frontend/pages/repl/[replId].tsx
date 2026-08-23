@@ -42,7 +42,7 @@ export default function ReplPage() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
 
   const orchestratorUrl = useMemo(
-    () => process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:4100',
+    () => process.env.NEXT_PUBLIC_ORCHESTRATOR_URL,
     [],
   )
 
