@@ -360,7 +360,7 @@ function Tree({ nodes, nodesByPath, expandedFolders, toggleFolder, parentPath, d
   )
 }
 
-function TreeNode({ node, nodesByPath, expandedFolders, toggleFolder, parentPath, depth, onSelectFile, selectedFolder, setSelectedFolder }: TreeProps & { node: FileNode, depth: number }) {
+function TreeNode({ node, nodesByPath, expandedFolders, toggleFolder, parentPath, depth, onSelectFile, selectedFolder, setSelectedFolder }: Omit<TreeProps, 'nodes'> & { node: FileNode, depth: number }) {
   const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name
   const isOpen = expandedFolders.has(currentPath)
   const isSelected = selectedFolder === currentPath
