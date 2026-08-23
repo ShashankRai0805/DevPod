@@ -1,18 +1,18 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: init-service-ingress
-  namespace: replit-system
+  name: orchestrator-ingress
+  namespace: replit-control-plane
 spec:
   ingressClassName: nginx
   rules:
-    - host: init.codecohort.xyz
+    - host: api.codecohort.xyz
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: init-service
+                name: orchestrator
                 port:
                   number: 80

@@ -14,6 +14,10 @@ app.get('/healthz', (_req, res) => {
   res.json({ ok: true })
 })
 
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' })
+})
+
 app.post('/api/repls/:replId/start', async (req, res) => {
   const parsed = paramsSchema.safeParse(req.params)
   if (!parsed.success) {

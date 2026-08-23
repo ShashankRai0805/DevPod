@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: replit-control-plane
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: orchestrator
+
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+
+    spec:
+      serviceAccountName: orchestrator
+
+      containers:
+        - name: orchestrator
+
+          image: 699073937176.dkr.ecr.us-east-1.amazonaws.com/orchestrator-service:v2
+
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 4100
+              protocol: TCP
+
+          env:
+            - name: ORCHESTRATOR_PORT
+              value: "4100"
+
+            # Frontend URL
+            # Keep localhost while testing locally.
+            # Change to https://codecohort.xyz after Vercel deployment.
+            - name: FRONTEND_URL
+              value: "http://localhost:3000"
+
+            # Namespace where user Repl resources are created
+            - name: K8S_NAMESPACE
+              value: "replit"
+
+            # S3 bucket used by the application
+            - name: S3_BUCKET_NAME
+              value: "shashank-replit-projects"
+
+            - name: AWS_REGION
+              value: "us-east-1"
+
+            # Base domain used for dynamically generated Repl URLs
+            - name: REPL_BASE_DOMAIN
+              value: "codecohort.xyz"
+
+            # Runner image that the Orchestrator will use
+            # when creating a user's Repl Pod
+            - name: RUNNER_IMAGE
+              value: "699073937176.dkr.ecr.us-east-1.amazonaws.com/runner-service:latest"
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4100
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4100
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
