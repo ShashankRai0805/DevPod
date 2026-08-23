@@ -38,7 +38,7 @@ spec:
             # Keep localhost while testing locally.
             # Change to https://codecohort.xyz after Vercel deployment.
             - name: FRONTEND_URL
-              value: "http://localhost:3000"
+              value: "https://dev-pod-iota.vercel.app"
 
             # Namespace where user Repl resources are created
             - name: K8S_NAMESPACE

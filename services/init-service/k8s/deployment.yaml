@@ -36,6 +36,9 @@ spec:
             - name: PORT
               value: "4000"
 
+            - name: FRONTEND_URL
+              value: "https://dev-pod-iota.vercel.app"
+
           readinessProbe:
             httpGet:
               path: /health

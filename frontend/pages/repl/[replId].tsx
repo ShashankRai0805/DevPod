@@ -107,7 +107,7 @@ export default function ReplPage() {
     if (workspaceReady && status === 'ready' && typeof replId === 'string') {
       const domain = process.env.NEXT_PUBLIC_REPL_BASE_DOMAIN || 'codecohort.xyz'
       // Use http in local dev, in production you'd use wss/https
-      const runnerUrl = `http://runner-${replId}.${domain}`
+      const runnerUrl = `https://runner-${replId}.${domain}`
       
       const newSocket = io(runnerUrl, {
         transports: ['websocket', 'polling']
@@ -134,7 +134,7 @@ export default function ReplPage() {
   }
 
   const showWorkspace = workspaceReady && status === 'ready' && !error
-  const previewUrl = `http://${replId}.${process.env.NEXT_PUBLIC_REPL_BASE_DOMAIN || 'codecohort.xyz'}`
+  const previewUrl = `https://${replId}.${process.env.NEXT_PUBLIC_REPL_BASE_DOMAIN || 'codecohort.xyz'}`
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
